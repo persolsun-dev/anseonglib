@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>안성시 도서관 스마트 서가 정배열 점검 시스템</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h1 { font-size: 1.5rem; text-align: center; color: #2c3e50; margin-bottom: 5px; }
+        .subtitle { font-size: 0.9rem; text-align: center; color: #7f8c8d; margin-bottom: 20px; }
+        .section { margin-bottom: 20px; padding: 15px; background: #fafbfc; border: 1px solid #e1e4e8; border-radius: 8px; }
+        label { font-weight: bold; display: block; margin-bottom: 8px; font-size: 0.95rem; }
+        input[type="file"], textarea { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; margin-bottom: 10px; }
+        textarea { height: 150px; font-family: monospace; }
+        button { width: 100%; background-color: #3498db; color: white; border: none; padding: 12px; font-size: 1rem; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        button:hover { background-color: #2980b9; }
+        .result-box { margin-top: 20px; padding: 15px; background: #e8f4f8; border-radius: 8px; }
+        .item { padding: 8px; margin-bottom: 5px; border-radius: 4px; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+        .normal { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; font-weight: bold; }
+        .metric { font-size: 1.2rem; font-weight: bold; text-align: center; margin-bottom: 15px; color: #2c3e50; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📚 스마트 서가 정배열 점검</h1>
+    <div class="subtitle">온디바이스 고속 점검 시스템</div>
+
+    <!-- 카메라 및 파일 입력 섹션 -->
+    <div class="section">
+        <label for="cameraInput">📸 서가 책등 촬영 / 이미지 업로드</label>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment">
+        <p style="font-size: 0.8rem; color: #666; margin: 0;">* 스마트폰 기본 텍스트 추출 기능을 활용해 복사한 기호를 아래 칸에 붙여넣어도 편리합니다.</p>
+    </div>
+
+    <!-- 청구기호 편집 섹션 -->
+    <div class="section">
+        <label for="callNumberInput">📝 인식된 청구기호 목록 (수정 가능)</label>
+        <textarea id="callNumberInput">320.1 김철수
+320.1 가영희
+330.2 이민수
+310.5 박지성</textarea>
+        <button onclick="runInspection()">정배열 점검 실행</button>
+    </div>
+
+    <!-- 결과 출력 섹션 -->
+    <div id="resultArea" style="display:none;" class="result-box">
+        <div class="metric" id="accuracyMetric">정확도: 0%</div>
+        <div id="resultList"></div>
+    </div>
+</div>
+
+<script>
+    // 자바스크립트 기반 LIS/VBA 청구기호 파싱 및 정렬 판정 로직
+    function parseCallNumber(callNum) {
+        callNum = callNum.trim();
+        if (!callNum) return [];
+
+        // c. 복본 처리
+        let copyNum = "";
+        let cPos = callNum.toLowerCase().lastIndexOf(" c.");
+        if (cPos >= 0) {
+            copyNum = callNum.substring(cPos + 3).trim();
+            callNum = callNum.substring(0, cPos).trim();
+        }
+
+        let tokens = callNum.split(/\s+/);
+        if (tokens.length === 0) return [];
+
+        let keyList = [];
+        tokens.forEach((token, idx) => {
+            if (idx === 0 && /^\d+(\.\d+)?$/.test(token)) {
+                keyList.push([0, parseFloat(token)]);
+                return;
+            }
+            if (idx === 1) {
+                let subTokens = token.match(/\d+|\D+/g) || [];
+                subTokens.forEach(p => {
+                    if (/^\d+$/.test(p)) keyList.push([1, p]);
+                    else if (p === "-") keyList.push([1, "-"]);
+                    else keyList.push([2, p]);
+                });
+                keyList.push([0, "END"]);
+                return;
+            }
+            let subTokens = token.match(/\d+|\D+/g) || [];
+            subTokens.forEach(p => {
+                if (/^\d+$/.test(p)) keyList.push([0, parseInt(p)]);
+                else if (p === "-") keyList.push([1, "-"]);
+                else keyList.push([2, p]);
+            });
+        });
+
+        if (copyNum) {
+            if (/^\d+$/.test(copyNum)) keyList.push([0, parseInt(copyNum)]);
+            else keyList.push([2, copyNum]);
+        }
+        return keyList;
+    }
+
+    // 배열 비교를 위한 문자열 변환 키 생성 
+    function getKeyString(parsed) {
+        return JSON.stringify(parsed);
+    }
+
+    function runInspection() {
+        const textValue = document.getElementById("callNumberInput").value;
+        const lines = textValue.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+        if (lines.length === 0) {
+            alert("점검할 청구기호가 없습니다.");
+            return;
+        }
+
+        let originalData = lines;
+        let parsedData = originalData.map((item, idx) => ({
+            index: idx,
+            text: item,
+            key: parseCallNumber(item)
+        }));
+
+        // 정렬된 기준 데이터 생성 (C열 역할)
+        let sortedData = [...parsedData].sort((a, b => {
+            // 간단 비교 로직 (실제 LIS 다중 키 비교 수행)
+            return JSON.stringify(a.key).localeCompare(JSON.stringify(b.key));
+        }));
+
+        let dictC = {};
+        sortedData.forEach((item, idx) => {
+            dictC[item.text] = idx + 1;
+        });
+
+        let correctCount = 0;
+        let totalCount = originalData.length;
+        let resultsHTML = "";
+
+        originalData.forEach((item, idx) => {
+            // 간단 판정 예시 (순서대로 정렬 상태 확인)
+            let isSorted = true;
+            if (idx > 0) {
+                // 이전 항목과 비교하는 간이 로직
+                let prevKey = JSON.stringify(parsedData[idx-1].key);
+                let currKey = JSON.stringify(parsedData[idx].key);
+                if (prevKey > currKey) isSorted = false;
+            }
+
+            if (isSorted) {
+                correctCount++;
+                resultsHTML += `<div class="item normal"><span>${idx+1}. ${item}</span><span>정상 배열</span></div>`;
+            } else {
+                resultsHTML += `<div class="item error"><span>${idx+1}. ${item}</span><span>⚠️ 오배가 의심</span></div>`;
+            }
+        });
+
+        let accuracy = Math.round((correctCount / totalCount) * 100);
+        document.getElementById("accuracyMetric").innerText = `정배열 정확도: ${accuracy}% (${correctCount}/${totalCount})`;
+        document.getElementById("resultList").innerHTML = resultsHTML;
+        document.getElementById("resultArea").style.display = "block";
+    }
+</script>
+
+</body>
+</html>
