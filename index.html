@@ -93,15 +93,15 @@
 
     <header>
         <h1>📚 LibAR 온디바이스 서가 점검</h1>
-        <p>KDC 청구기호 패턴 필터링 기반 정배열 판정</p>
+        <p>800번대 문학 서가 전용 고정밀 OCR 필터링</p>
     </header>
 
     <div class="container">
         <div class="card">
             <label class="upload-section">
                 <div style="font-size: 2rem; margin-bottom: 0.5rem;">📸</div>
-                <strong>서가 책등 사진 선택 또는 촬영</strong>
-                <p style="font-size: 0.8rem; color: #64748b; margin: 0.5rem 0 0;">노이즈를 걸러내고 청구기호만 정밀 추출합니다</p>
+                <strong>800번대 서가 책등 사진 선택</strong>
+                <p style="font-size: 0.8rem; color: #64748b; margin: 0.5rem 0 0;">문학 청구기호(800~899)만 정밀하게 추출합니다</p>
                 <input type="file" id="file-input" accept="image/*" capture="environment">
             </label>
             
@@ -111,15 +111,15 @@
             
             <div id="status-text"></div>
 
-            <button class="btn" id="run-btn" onclick="processImageOCR()" style="display:none;">청구기호 정밀 추출 및 오배열 점검</button>
+            <button class="btn" id="run-btn" onclick="processImageOCR()" style="display:none;">800번대 서가 정밀 분석 시작</button>
         </div>
 
         <div class="card" id="dashboard-card" style="display:none;">
-            <h3 style="margin-top:0; font-size:1rem;">📊 청구기호 점검 리포트</h3>
+            <h3 style="margin-top:0; font-size:1rem;">📊 800번대 서가 점검 리포트</h3>
             <div class="stats-grid">
                 <div class="stat-box">
                     <div class="num" id="total-count">0</div>
-                    <div class="label">유효 청구기호</div>
+                    <div class="label">인식된 800번대</div>
                 </div>
                 <div class="stat-box success">
                     <div class="num" id="success-count">0</div>
@@ -154,7 +154,7 @@
                     previewImg.src = e.target.result;
                     previewContainer.style.display = 'block';
                     runBtn.style.display = 'block';
-                    statusText.innerText = "사진 준비 완료. 버튼을 눌러 청구기호를 분석하세요.";
+                    statusText.innerText = "사진 준비 완료. 분석 버튼을 눌러주세요.";
                 }
                 reader.readAsDataURL(file);
             }
@@ -164,12 +164,15 @@
             if (!selectedFile) return;
 
             runBtn.disabled = true;
-            runBtn.innerText = "청구기호 스캔 중...";
-            statusText.innerText = "이미지에서 KDC 청구기호 패턴을 분석하고 있습니다...";
+            runBtn.innerText = "이미지 전처리 및 OCR 분석 중...";
+            statusText.innerText = "책등 글자의 선명도를 높이고 800번대 기호를 찾는 중입니다...";
 
             try {
+                // 1. 이미지 전처리 (Canvas를 이용해 대비 및 선명도 극대화)
+                const processedImageUrl = await enhanceImage(selectedFile);
+
                 const worker = await Tesseract.createWorker('eng+kor');
-                const ret = await worker.recognize(selectedFile);
+                const ret = await worker.recognize(processedImageUrl);
                 await worker.terminate();
 
                 const rawText = ret.data.text;
@@ -177,36 +180,36 @@
 
                 let extractedCallNumbers = [];
 
-                // KDC 분류기호 패턴 (예: 3자리 숫자 + 선택적 소수점, 예: 800, 813, 843.2 등) 포착
+                // 2. 800번대 문학 기호 전용 패턴 필터 (800 ~ 899 사이의 숫자만 엄격하게 추출)
                 lines.forEach(line => {
-                    // 3자리 이상의 숫자 혹은 소수점을 포함한 패턴 찾기
-                    const match = line.match(/\b([0-9]{3}(?:\.[0-9]+)?)\b/);
-                    if (match) {
-                        const val = parseFloat(match[1]);
-                        // 800번대 사진이므로 800~899 범위이거나 유효한 도서관 분류기호 범위 내의 숫자만 필터링
-                        if (!extractedCallNumbers.includes(val)) {
-                            extractedCallNumbers.push(val);
-                        }
+                    const matches = line.match(/\b(8[0-9]{2}(?:\.[0-9]+)?)\b/g);
+                    if (matches) {
+                        matches.forEach(m => {
+                            const val = parseFloat(m);
+                            if (val >= 800 && val < 900 && !extractedCallNumbers.includes(val)) {
+                                extractedCallNumbers.push(val);
+                            }
+                        });
                     }
                 });
 
                 let parsedItems = [];
                 if (extractedCallNumbers.length === 0) {
                     parsedItems = [
-                        { text: "선명한 청구기호를 찾지 못했습니다", status: "danger", note: "책등이 잘 보이도록 다시 촬영해 주세요" }
+                        { text: "800번대 청구기호가 감지되지 않았습니다", status: "danger", note: "책등 번호가 선명하게 나오도록 촬영해 주세요" }
                     ];
                 } else {
                     let lastNum = -1;
                     parsedItems = extractedCallNumbers.map((num, idx) => {
                         let isNormal = true;
-                        // 오름차순 검증 (앞 책보다 번호가 작아지면 오배열)
+                        // 오름차순 검증 (번호가 작아지면 오배열)
                         if (num < lastNum && lastNum !== -1) {
                             isNormal = false;
                         }
                         lastNum = num;
 
                         return {
-                            text: `분류기호: ${num}`,
+                            text: `KDC ${num}`,
                             status: isNormal ? "success" : "danger",
                             note: isNormal ? "정상 배열" : "순서 역전 (오배열 의심)"
                         };
@@ -214,14 +217,41 @@
                 }
 
                 renderResults(parsedItems);
-                statusText.innerText = "정밀 분석이 완료되었습니다!";
+                statusText.innerText = "800번대 서가 정밀 분석이 완료되었습니다!";
             } catch (error) {
                 console.error(error);
                 statusText.innerText = "분석 중 오류가 발생했습니다.";
             } finally {
                 runBtn.disabled = false;
-                runBtn.innerText = "청구기호 정밀 추출 및 오배열 점검";
+                runBtn.innerText = "800번대 서가 정밀 분석 시작";
             }
+        }
+
+        // 이미지 대비를 높여 OCR 인식률을 극대화하는 헬퍼 함수
+        function enhanceImage(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        
+                        // 원본 이미지 그리기
+                        ctx.drawImage(img, 0, 0);
+                        
+                        // 이미지 대비(Contrast) 및 밝기 조절로 책등 글자 가독성 향상
+                        ctx.filter = 'contrast(160%) brightness(110%)';
+                        ctx.drawImage(canvas, 0, 0);
+
+                        resolve(canvas.toDataURL('image/jpeg'));
+                    }
+                    img.src = e.target.result;
+                }
+                reader.readAsDataURL(file);
+            });
         }
 
         function renderResults(items) {
