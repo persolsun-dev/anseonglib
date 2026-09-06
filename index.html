@@ -58,7 +58,6 @@
         callNum = callNum.trim();
         if (!callNum) return [];
 
-        // c. 복본 처리
         let copyNum = "";
         let cPos = callNum.toLowerCase().lastIndexOf(" c.");
         if (cPos >= 0) {
@@ -100,11 +99,6 @@
         return keyList;
     }
 
-    // 배열 비교를 위한 문자열 변환 키 생성 
-    function getKeyString(parsed) {
-        return JSON.stringify(parsed);
-    }
-
     function runInspection() {
         const textValue = document.getElementById("callNumberInput").value;
         const lines = textValue.split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -121,11 +115,10 @@
             key: parseCallNumber(item)
         }));
 
-        // 정렬된 기준 데이터 생성 (C열 역할)
-        let sortedData = [...parsedData].sort((a, b => {
-            // 간단 비교 로직 (실제 LIS 다중 키 비교 수행)
+        // 정렬된 기준 데이터 생성 (오류 수정 완료)
+        let sortedData = [...parsedData].sort((a, b) => {
             return JSON.stringify(a.key).localeCompare(JSON.stringify(b.key));
-        }));
+        });
 
         let dictC = {};
         sortedData.forEach((item, idx) => {
@@ -137,10 +130,8 @@
         let resultsHTML = "";
 
         originalData.forEach((item, idx) => {
-            // 간단 판정 예시 (순서대로 정렬 상태 확인)
             let isSorted = true;
             if (idx > 0) {
-                // 이전 항목과 비교하는 간이 로직
                 let prevKey = JSON.stringify(parsedData[idx-1].key);
                 let currKey = JSON.stringify(parsedData[idx].key);
                 if (prevKey > currKey) isSorted = false;
