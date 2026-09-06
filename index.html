@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LibAR — 도서관 데이터 기반 온디바이스 AI</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --success-color: #16a34a;
+            --danger-color: #dc2626;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+        header {
+            background-color: #1e293b;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        header h1 { margin: 0; font-size: 1.25rem; }
+        header p { margin: 0.25rem 0 0; font-size: 0.85rem; color: #94a3b8; }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+        }
+        
+        .upload-section {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            background: #f1f5f9;
+            cursor: pointer;
+        }
+        .upload-section input { display: none; }
+        
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            width: 100%;
+            cursor: pointer;
+            margin-top: 0.5rem;
+        }
+        .btn:active { opacity: 0.9; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+            margin-top: 1rem;
+            text-align: center;
+        }
+        .stat-box {
+            background: #334155;
+            color: white;
+            padding: 0.75rem;
+            border-radius: 8px;
+        }
+        .stat-box.danger { background: var(--danger-color); }
+        .stat-box.success { background: var(--success-color); }
+        .stat-box .num { font-size: 1.25rem; font-weight: bold; }
+        .stat-box .label { font-size: 0.75rem; color: #cbd5e1; }
+
+        .result-list {
+            margin-top: 1rem;
+        }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            border-left: 5px solid #cbd5e1;
+            background: #f8fafc;
+        }
+        .result-item.success { border-left-color: var(--success-color); background: #f0fdf4; }
+        .result-item.danger { border-left-color: var(--danger-color); background: #fef2f2; cursor: pointer; }
+        
+        .badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .badge.success { background: #dcfce7; color: var(--success-color); }
+        .badge.danger { background: #fee2e2; color: var(--danger-color); }
+
+        #preview-container {
+            margin-top: 1rem;
+            text-align: center;
+            display: none;
+        }
+        #preview-img {
+            max-width: 100%;
+            max-height: 250px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>📚 LibAR 온디바이스 서가 점검</h1>
+        <p>실증관(대림도서관) 전용 AI 모델 기반 실시간 오배열 감지</p>
+    </header>
+
+    <div class="container">
+        <!-- 촬영 및 업로드 영역 -->
+        <div class="card">
+            <label class="upload-section" id="drop-zone">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">📸</div>
+                <strong>서가 책등 촬영 또는 이미지 업로드</strong>
+                <p style="font-size: 0.8rem; color: #64748b; margin: 0.5rem 0 0;">터치하여 사진을 선택하면 온디바이스 OCR이 즉시 작동합니다</p>
+                <input type="file" id="file-input" accept="image/*" capture="environment">
+            </label>
+            
+            <div id="preview-container">
+                <img id="preview-img" alt="업로드된 서가 이미지">
+            </div>
+
+            <button class="btn" id="run-btn" onclick="runOnDeviceInference()" style="display:none;">AI 온디바이스 정배열 점검 실행</button>
+        </div>
+
+        <!-- 결과 요약 대시보드 -->
+        <div class="card" id="dashboard-card" style="display:none;">
+            <h3 style="margin-top:0; font-size:1rem;">📊 서가 점검 현황 리포트</h3>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="num" id="total-count">0</div>
+                    <div class="label">총 확인</div>
+                </div>
+                <div class="stat-box success">
+                    <div class="num" id="success-count">0</div>
+                    <div class="label">정상 배열</div>
+                </div>
+                <div class="stat-box danger">
+                    <div class="num" id="danger-count">0</div>
+                    <div class="label">오배열 의심</div>
+                </div>
+            </div>
+
+            <div class="result-list" id="result-list">
+                <!-- 결과 아이템들이 동적으로 주입됩니다 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const previewContainer = document.getElementById('preview-container');
+        const previewImg = document.getElementById('preview-img');
+        const runBtn = document.getElementById('run-btn');
+        const dashboardCard = document.getElementById('dashboard-card');
+        const resultList = document.getElementById('result-list');
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImg.src = e.target.result;
+                    previewContainer.style.display = 'block';
+                    runBtn.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 원고의 핵심 온디바이스 OCR 및 LIS 알고리즘 시뮬레이션 함수
+        function runOnDeviceInference() {
+            runBtn.innerText = "ONNX Runtime WebGPU 추론 중... (약 8초)";
+            runBtn.disabled = true;
+
+            setTimeout(() => {
+                runBtn.innerText = "AI 온디바이스 정배열 점검 실행";
+                runBtn.disabled = false;
+                dashboardCard.style.display = 'block';
+
+                // 샘플 실측 데이터 시뮬레이션 (원고 기준 16권 단위 스캔 결과 재현)
+                const mockResults = [
+                    { callNum: "320.1 김철수", status: "success", msg: "정상 배열" },
+                    { callNum: "320.1 가영희", status: "danger", msg: "오배열 의심 (올바른 자리: 330.2 이웃)" },
+                    { callNum: "330.2 이민수", status: "success", msg: "정상 배열" },
+                    { callNum: "310.5 박지성", status: "danger", msg: "오배열 의심 (순서 역전됨)" },
+                    { callNum: "330.9 최유진", status: "success", msg: "정상 배열" },
+                    { callNum: "340.1 정민준", status: "success", msg: "정상 배열" }
+                ];
+
+                let successCnt = mockResults.filter(r => r.status === 'success').length;
+                let dangerCnt = mockResults.filter(r => r.status === 'danger').length;
+
+                document.getElementById('total-count').innerText = mockResults.length;
+                document.getElementById('success-count').innerText = successCnt;
+                document.getElementById('danger-count').innerText = dangerCnt;
+
+                resultList.innerHTML = '';
+                mockResults.forEach((item, index) => {
+                    const div = document.createElement('div');
+                    div.className = `result-item ${item.status}`;
+                    div.innerHTML = `
+                        <div>
+                            <strong>${index + 1}. ${item.callNum}</strong>
+                            <div style="font-size:0.75rem; color:#64748b;">${item.msg}</div>
+                        </div>
+                        <span class="badge ${item.status}">${item.status === 'success' ? '정상' : '오배열'}</span>
+                    `;
+                    resultList.appendChild(div);
+                });
+            }, 1500);
+        }
+    </script>
+</body>
+</html>
